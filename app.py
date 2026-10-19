@@ -494,6 +494,50 @@ def format_ratio(val):
 # ---------------------------------------------------------
 # Data Fetching with Cloud Anti-Block Protection & Caching
 # ---------------------------------------------------------
+def fetch_yahoo_html_quote_summary(symbol):
+    """
+    Directly extracts complete quoteSummary & quoteResponse from Yahoo Finance's 
+    public HTML page using Chrome TLS impersonation (curl_cffi).
+    This completely bypasses the crumb/401 API blocks enforced on cloud datacenter IPs (AWS / Streamlit Cloud).
+    """
+    try:
+        from curl_cffi import requests as cffi_requests
+        url = f"https://finance.yahoo.com/quote/{symbol}/"
+        s = cffi_requests.Session(impersonate="chrome")
+        r = s.get(url, timeout=12)
+        if r.status_code != 200:
+            return None
+        
+        matches = re.findall(r'<script[^>]*type=[\"\']application/json[\"\'][^>]*>(.*?)</script>', r.text, re.DOTALL)
+        combined = {}
+        for m in matches:
+            try:
+                data = json.loads(m)
+                if isinstance(data, dict) and "body" in data:
+                    inner = json.loads(data["body"])
+                    if isinstance(inner, dict) and "quoteSummary" in inner:
+                        res = inner["quoteSummary"].get("result", [{}])[0]
+                        for section, content in res.items():
+                            if isinstance(content, dict):
+                                for k, v in content.items():
+                                    if isinstance(v, dict) and "raw" in v:
+                                        combined[k] = v["raw"]
+                                    elif not isinstance(v, dict) or v:
+                                        combined[k] = v
+                    elif isinstance(inner, dict) and "quoteResponse" in inner:
+                        for q in inner["quoteResponse"].get("result", []):
+                            if q.get("symbol") == symbol:
+                                for k, v in q.items():
+                                    if isinstance(v, dict) and "raw" in v:
+                                        combined[k] = v["raw"]
+                                    elif not isinstance(v, dict) or v:
+                                        combined[k] = v
+            except Exception:
+                pass
+        return combined if len(combined) > 5 else None
+    except Exception:
+        return None
+
 def get_yf_ticker(symbol):
     """Instantiates yf.Ticker with Chrome TLS fingerprint session to prevent cloud IP blocks."""
     try:
@@ -505,19 +549,26 @@ def get_yf_ticker(symbol):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_company_data(symbol):
-    """Fetches company profile and fundamental ratios with resilient cloud fallback layers."""
-    t = get_yf_ticker(symbol)
-    info = None
-    try:
-        raw_info = t.info
-        if raw_info and isinstance(raw_info, dict) and len(raw_info) > 5:
-            info = dict(raw_info)
-    except Exception:
-        info = None
+    """Fetches company profile and fundamental ratios with resilient multi-tier cloud fallbacks."""
+    # Tier 1: HTML Embedded quoteSummary (Bypasses AWS/Streamlit Cloud datacenter 401 API blocks)
+    info = fetch_yahoo_html_quote_summary(symbol)
 
-    # Check if price is present; if not, attempt fast_info fallback
+    # Tier 2: Standard yfinance Ticker info (if Tier 1 was unavailable)
+    t = None
+    if not info or len(info) <= 5:
+        try:
+            t = get_yf_ticker(symbol)
+            raw_info = t.info
+            if raw_info and isinstance(raw_info, dict) and len(raw_info) > 5:
+                info = dict(raw_info)
+        except Exception:
+            pass
+
+    # Tier 3: Fast Info fallback for core pricing & market cap
     if not info or (info.get("regularMarketPrice") is None and info.get("currentPrice") is None):
         try:
+            if t is None:
+                t = get_yf_ticker(symbol)
             if hasattr(t, "fast_info") and t.fast_info is not None:
                 fi = t.fast_info
                 info = info if info else {}
@@ -536,9 +587,11 @@ def get_company_data(symbol):
         except Exception:
             pass
 
-    # Secondary fallback: retrieve recent historical prices for current and previous close
+    # Tier 4: Recent historical price fallback
     if not info or (info.get("regularMarketPrice") is None and info.get("currentPrice") is None):
         try:
+            if t is None:
+                t = get_yf_ticker(symbol)
             df = t.history(period="5d")
             if df is not None and not df.empty:
                 info = info if info else {}
