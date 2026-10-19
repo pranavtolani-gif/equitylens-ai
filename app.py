@@ -6,6 +6,7 @@ import os
 import json
 import io
 import re
+import base64
 from datetime import datetime
 import requests
 import streamlit as st
@@ -18,7 +19,7 @@ from dotenv import load_dotenv
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image as RLImage
 
 # Load local environment variables from .env file
 load_dotenv(override=True)
@@ -26,12 +27,26 @@ load_dotenv(override=True)
 # ---------------------------------------------------------
 # Page Configuration & Styling
 # ---------------------------------------------------------
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "equitylens_logo.jpg")
+page_icon_val = LOGO_PATH if os.path.exists(LOGO_PATH) else "📈"
+
 st.set_page_config(
     page_title="EquityLens AI | Institutional Research Terminal",
-    page_icon="📈",
+    page_icon=page_icon_val,
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+@st.cache_data
+def get_logo_base64():
+    """Encodes brand logo as base64 for seamless inline HTML rendering."""
+    if os.path.exists(LOGO_PATH):
+        try:
+            with open(LOGO_PATH, "rb") as f:
+                return base64.b64encode(f.read()).decode("utf-8")
+        except Exception:
+            return None
+    return None
 
 # Custom Dark Financial-Terminal Styling
 st.markdown("""
@@ -103,8 +118,8 @@ st.markdown("""
         gap: 12px;
     }
     .masthead-logo {
-        width: 36px;
-        height: 36px;
+        width: 38px;
+        height: 38px;
         background: #182030;
         border: 1px solid #232e42;
         border-radius: 6px;
@@ -113,6 +128,16 @@ st.markdown("""
         justify-content: center;
         color: #38bdf8;
         font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+    .masthead-logo-img {
+        width: 38px;
+        height: 38px;
+        border-radius: 6px;
+        border: 1px solid #1e2433;
+        object-fit: cover;
+        flex-shrink: 0;
+        box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
     }
     .masthead-title {
         font-size: 1.25rem;
@@ -754,10 +779,30 @@ def generate_pdf_report(company_name, symbol, sector, industry, price_str, metri
 
     story = []
 
-    # Title & Subtitle Header
-    story.append(Paragraph('EquityLens AI — Equity Research Report', title_style))
-    story.append(Paragraph(f'<b>Target:</b> {company_name} ({symbol}) &nbsp;|&nbsp; <b>Sector:</b> {sector} &nbsp;|&nbsp; <b>Industry:</b> {industry}<br/><b>Report Timestamp:</b> {timestamp}', subtitle_style))
-    story.append(HRFlowable(width='100%', thickness=1.5, color=colors.HexColor('#0d233a'), spaceBefore=2, spaceAfter=10))
+    # Title & Subtitle Header with Brand Logo
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo_img = RLImage(LOGO_PATH, width=44, height=44)
+            header_cell = [
+                Paragraph('EquityLens AI — Equity Research Report', title_style),
+                Paragraph(f'<b>Target:</b> {company_name} ({symbol}) &nbsp;|&nbsp; <b>Sector:</b> {sector} &nbsp;|&nbsp; <b>Industry:</b> {industry}<br/><b>Report Timestamp:</b> {timestamp}', subtitle_style)
+            ]
+            header_table = Table([[logo_img, header_cell]], colWidths=[52, 470])
+            header_table.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                ('TOPPADDING', (0,0), (-1,-1), 0),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+            ]))
+            story.append(header_table)
+        except Exception:
+            story.append(Paragraph('EquityLens AI — Equity Research Report', title_style))
+            story.append(Paragraph(f'<b>Target:</b> {company_name} ({symbol}) &nbsp;|&nbsp; <b>Sector:</b> {sector} &nbsp;|&nbsp; <b>Industry:</b> {industry}<br/><b>Report Timestamp:</b> {timestamp}', subtitle_style))
+    else:
+        story.append(Paragraph('EquityLens AI — Equity Research Report', title_style))
+        story.append(Paragraph(f'<b>Target:</b> {company_name} ({symbol}) &nbsp;|&nbsp; <b>Sector:</b> {sector} &nbsp;|&nbsp; <b>Industry:</b> {industry}<br/><b>Report Timestamp:</b> {timestamp}', subtitle_style))
+    story.append(HRFlowable(width='100%', thickness=1.5, color=colors.HexColor('#0d233a'), spaceBefore=6, spaceAfter=10))
 
     # Fundamental Snapshot Table
     story.append(Paragraph('1. Fundamental Snapshot', section_heading))
@@ -855,9 +900,15 @@ with st.container(border=True):
     col_brand, col_search = st.columns([5.8, 4.2], vertical_alignment="center")
 
     with col_brand:
+        logo_b64 = get_logo_base64()
+        if logo_b64:
+            brand_icon_html = f'<img src="data:image/jpeg;base64,{logo_b64}" class="masthead-logo-img" alt="EquityLens AI" />'
+        else:
+            brand_icon_html = '<div class="masthead-logo">📈</div>'
+
         st.markdown(f"""
         <div class="masthead-left">
-            <div class="masthead-logo">📈</div>
+            {brand_icon_html}
             <div>
                 <div class="masthead-title">EquityLens AI</div>
                 <div style="display: flex; align-items: center; gap: 8px; margin-top: 3px; flex-wrap: wrap;">
