@@ -1,0 +1,18 @@
+# Web Dashboard Framework
+streamlit>=1.35.0
+
+# Financial Market Data
+yfinance>=0.2.40
+pandas>=2.0.0
+
+# Interactive Financial Charting
+plotly>=5.20.0
+
+# HTTP Requests (NVIDIA NIM API)
+requests>=2.31.0
+
+# Environment Variable & Secret Management
+python-dotenv>=1.0.0
+
+# Institutional PDF Generation
+reportlab>=4.0.0
