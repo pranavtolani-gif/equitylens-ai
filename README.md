@@ -1,6 +1,10 @@
 # EquityLens AI — Institutional Equity Research Terminal
 
-EquityLens AI is an equity research platform for Indian listed equities (NSE & BSE), combining real-time market data, interactive technical charts, institutional fundamental snapshots, and generative equity research memos powered by NVIDIA NIM (Google Gemma model).
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://equitylens-ai-izsyj9xctg7bkddqhvspfn.streamlit.app)
+
+EquityLens AI is an institutional equity research terminal for Indian listed equities (NSE & BSE), combining real-time market data, interactive technical charts, institutional fundamental snapshots, and generative equity research memos powered by NVIDIA NIM (Google Gemma model).
+
+🔗 **Live Deployment:** [equitylens-ai-izsyj9xctg7bkddqhvspfn.streamlit.app](https://equitylens-ai-izsyj9xctg7bkddqhvspfn.streamlit.app)
 
 ---
 
