@@ -1,6 +1,6 @@
 # EquityLens AI — Institutional Equity Research Terminal
 
-EquityLens AI is a dark-terminal equity research platform for Indian listed equities (NSE & BSE), combining real-time market data, interactive technical charts, institutional fundamental snapshots, and generative equity research memos powered by NVIDIA NIM (Google Gemma model).
+EquityLens AI is an equity research platform for Indian listed equities (NSE & BSE), combining real-time market data, interactive technical charts, institutional fundamental snapshots, and generative equity research memos powered by NVIDIA NIM (Google Gemma model).
 
 ---
 
