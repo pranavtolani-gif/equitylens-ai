@@ -636,9 +636,12 @@ def get_historical_prices(symbol, period):
 
 # ---------------------------------------------------------
 # AI Analysis Function (NVIDIA Gemma Hosted API)
-# ---------------------------------------------------------
 NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
-NVIDIA_GEMMA_MODEL = "google/gemma-4-31b-it"
+NVIDIA_MODELS_CASCADE = [
+    "meta/llama-3.2-11b-vision-instruct",
+    "stepfun-ai/step-5-preview",
+    "google/gemma-4-31b-it"
+]
 
 def get_nvidia_api_key():
     """Retrieves NVIDIA API key from local .env or Streamlit Cloud Secrets."""
@@ -723,64 +726,73 @@ VERIFIED COMPANY DATA:
             "Accept": "text/event-stream"
         }
 
-        payload = {
-            "model": NVIDIA_GEMMA_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a professional equity research analyst specializing in Indian listed equities on the NSE/BSE. Ground your analysis strictly on verified metrics. Never fabricate numbers. Deliver concise, high-density analysis."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "temperature": 0.2,
-            "max_tokens": 1200,
-            "stream": True
-        }
+        last_error = None
+        for model_name in NVIDIA_MODELS_CASCADE:
+            payload = {
+                "model": model_name,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a professional equity research analyst specializing in Indian listed equities on the NSE/BSE. Ground your analysis strictly on verified metrics. Never fabricate numbers. Deliver concise, high-density analysis."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "temperature": 0.2,
+                "max_tokens": 800,
+                "stream": True
+            }
 
-        response = requests.post(
-            NVIDIA_ENDPOINT,
-            headers=headers,
-            json=payload,
-            stream=True,
-            timeout=180
-        )
+            try:
+                response = requests.post(
+                    NVIDIA_ENDPOINT,
+                    headers=headers,
+                    json=payload,
+                    stream=True,
+                    timeout=75
+                )
 
-        if response.status_code == 401:
-            return None, "Authentication Error (401): The API key in .env was not accepted. Please verify your key at build.nvidia.com."
-        elif response.status_code == 429:
-            return None, "Rate Limit Exceeded (429): API rate limit reached. Please wait a moment before trying again."
-        elif response.status_code != 200:
-            return None, f"API status {response.status_code}: Unable to generate memo."
+                if response.status_code == 401:
+                    return None, "Authentication Error (401): The API key was not accepted. Please verify your NVIDIA API key."
+                elif response.status_code == 429:
+                    last_error = "Rate limit reached on model. Attempting alternative..."
+                    continue
+                elif response.status_code != 200:
+                    last_error = f"API status {response.status_code} on {model_name}."
+                    continue
 
-        collected_content = []
-        for line in response.iter_lines():
-            if line:
-                decoded = line.decode('utf-8')
-                if decoded.startswith('data: '):
-                    raw = decoded[6:].strip()
-                    if raw == '[DONE]':
-                        break
-                    try:
-                        chunk = json.loads(raw)
-                        delta = chunk.get('choices', [{}])[0].get('delta', {}).get('content', '')
-                        if delta:
-                            collected_content.append(delta)
-                    except Exception:
-                        pass
+                collected_content = []
+                for line in response.iter_lines():
+                    if line:
+                        decoded = line.decode('utf-8')
+                        if decoded.startswith('data: '):
+                            raw = decoded[6:].strip()
+                            if raw == '[DONE]':
+                                break
+                            try:
+                                chunk = json.loads(raw)
+                                delta = chunk.get('choices', [{}])[0].get('delta', {}).get('content', '')
+                                if delta:
+                                    collected_content.append(delta)
+                            except Exception:
+                                pass
 
-        full_text = ''.join(collected_content).strip()
-        if full_text:
-            return full_text, None
-        else:
-            return None, "Request completed but returned empty text. Please try again."
+                full_text = ''.join(collected_content).strip()
+                if full_text and len(full_text) > 80:
+                    return full_text, None
+                else:
+                    last_error = f"Model {model_name} returned insufficient text."
+            except requests.exceptions.Timeout:
+                last_error = f"Connection to {model_name} timed out. Attempting fallback model..."
+            except requests.exceptions.RequestException as req_err:
+                last_error = f"Network connection error on {model_name}: {req_err}"
 
-    except requests.exceptions.Timeout:
-        return None, "request timed out. Please try again."
-    except requests.exceptions.RequestException as req_err:
-        return None, f"Network connection error: {req_err}"
+        if last_error:
+            return None, last_error
+        return None, "Research memo generation timed out across endpoints. Please try again."
+
     except Exception as e:
         return None, f"Unexpected error during research memo generation: {e}"
 
@@ -942,7 +954,7 @@ def generate_pdf_report(company_name, symbol, sector, industry, price_str, metri
 
     # Disclaimer
     story.append(HRFlowable(width='100%', thickness=0.8, color=colors.HexColor('#cccccc'), spaceBefore=12, spaceAfter=6))
-    story.append(Paragraph('<b>Disclaimer & Data Sources:</b> Market data retrieved from Yahoo Finance (NSE/BSE). AI research memos are powered by NVIDIA NIM (Google Gemma model) and grounded strictly on verified financial metrics. This document is automatically generated for educational and informational research purposes only and does not constitute investment advice.', disclaimer_style))
+    story.append(Paragraph('<b>Disclaimer & Data Sources:</b> Market data retrieved from Yahoo Finance (NSE/BSE). AI research memos are powered by NVIDIA NIM (Institutional AI Engine) and grounded strictly on verified financial metrics. This document is automatically generated for educational and informational research purposes only and does not constitute investment advice.', disclaimer_style))
 
     doc.build(story)
     return buffer.getvalue()
@@ -1382,7 +1394,7 @@ else:
                             Generated at {memo_data['timestamp']} &bull; Sourced from verified market fundamentals
                         </div>
                     </div>
-                    <span class="ai-model-badge">NVIDIA NIM &bull; Google Gemma 4 (31B IT)</span>
+                    <span class="ai-model-badge">NVIDIA NIM &bull; Institutional AI Analyst</span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
