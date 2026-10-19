@@ -492,16 +492,25 @@ def format_ratio(val):
         return "N/A"
 
 # ---------------------------------------------------------
-# Data Fetching with Caching
+# Data Fetching with Cloud Anti-Block Protection & Caching
 # ---------------------------------------------------------
+def get_yf_ticker(symbol):
+    """Instantiates yf.Ticker with Chrome TLS fingerprint session to prevent cloud IP blocks."""
+    try:
+        from curl_cffi import requests as cffi_requests
+        session = cffi_requests.Session(impersonate="chrome")
+        return yf.Ticker(symbol, session=session)
+    except Exception:
+        return yf.Ticker(symbol)
+
 @st.cache_data(ttl=300, show_spinner=False)
 def get_company_data(symbol):
-    """Fetches company profile and fundamental ratios with resilient fallback layers."""
-    t = yf.Ticker(symbol)
+    """Fetches company profile and fundamental ratios with resilient cloud fallback layers."""
+    t = get_yf_ticker(symbol)
     info = None
     try:
         raw_info = t.info
-        if raw_info and isinstance(raw_info, dict):
+        if raw_info and isinstance(raw_info, dict) and len(raw_info) > 5:
             info = dict(raw_info)
     except Exception:
         info = None
@@ -539,14 +548,32 @@ def get_company_data(symbol):
         except Exception:
             pass
 
-    if info and (info.get("currentPrice") is not None or info.get("regularMarketPrice") is not None):
-        return info
-    return None
+    if not info or (info.get("currentPrice") is None and info.get("regularMarketPrice") is None):
+        return None
+
+    # Smart fundamental calculations (fill missing metrics if raw tags are omitted by exchange)
+    curr_price = info.get("currentPrice") or info.get("regularMarketPrice")
+    eps = info.get("trailingEps")
+    book_val = info.get("bookValue")
+
+    # 1. Trailing P/E fallback: Price / EPS
+    if (info.get("trailingPE") is None or pd.isna(info.get("trailingPE"))) and curr_price and eps and eps > 0:
+        info["trailingPE"] = round(curr_price / eps, 2)
+
+    # 2. Return on Equity (ROE) fallback: EPS / Book Value
+    if (info.get("returnOnEquity") is None or pd.isna(info.get("returnOnEquity"))) and eps and book_val and book_val > 0:
+        info["returnOnEquity"] = round(eps / book_val, 4)
+
+    # 3. Clean company name fallback
+    if not info.get("shortName") and not info.get("longName"):
+        info["shortName"] = symbol.replace(".NS", "").replace(".BO", "")
+
+    return info
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_historical_prices(symbol, period):
     try:
-        t = yf.Ticker(symbol)
+        t = get_yf_ticker(symbol)
         df = t.history(period=period)
         if df is not None and not df.empty:
             return df

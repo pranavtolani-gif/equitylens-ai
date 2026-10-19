@@ -1,8 +1,9 @@
 # Web Dashboard Framework
 streamlit>=1.35.0
 
-# Financial Market Data
+# Financial Market Data & Cloud Anti-Block TLS Engine
 yfinance>=0.2.40
+curl_cffi>=0.7.0
 pandas>=2.0.0
 
 # Interactive Financial Charting
